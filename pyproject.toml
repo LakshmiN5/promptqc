@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
 authors = [
-    {name = "Lakshmi", email = "lakshmi@example.com"}
+    {name = "Lakshmi", email = "lakshmi.sunil5486@gmail.com"}
 ]
 keywords = [
     "prompt", "LLM", "quality", "linter", "optimization",
