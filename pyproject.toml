@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "promptqc"
-version = "0.1.0"
+version = "0.2.0"
 description = "Quality assessment and improvement suggestions for LLM system prompts"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -31,19 +31,29 @@ classifiers = [
 ]
 
 dependencies = [
-    "sentence-transformers>=2.2.0",
     "numpy>=1.20.0",
     "tiktoken>=0.5.0",
     "rich>=13.0.0",
     "click>=8.0.0",
+    "tomli>=2.0.0;python_version<'3.11'",
 ]
 
 [project.optional-dependencies]
+llm = [
+    "litellm>=1.30.0",
+]
+semantic = [
+    "sentence-transformers>=2.2.0",
+]
+all = [
+    "promptqc[llm,semantic]",
+]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "black>=23.0.0",
     "ruff>=0.1.0",
+    "promptqc[all]",
 ]
 
 [project.scripts]

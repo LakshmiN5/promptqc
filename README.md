@@ -88,6 +88,14 @@ promptqc check system_prompt.txt
 # Fast mode — pattern-based only, no model download, instant
 promptqc check system_prompt.txt --fast
 
+# Auto-fix deterministic issues (filler phrases, negative framing)
+promptqc check system_prompt.txt --fix
+
+# AI Judge deep analysis — uses an LLM to find subtle logic issues
+# Requires API key (GROQ_API_KEY, OPENAI_API_KEY) or local Ollama
+promptqc check prompt.txt --judge groq/llama3-8b-8192
+promptqc check prompt.txt --judge ollama/phi3
+
 # Token budget analysis
 promptqc tokens system_prompt.txt --model gpt-4o-mini
 
@@ -140,6 +148,21 @@ Identifies near-duplicate instructions that waste tokens without adding value.
 - Token budget analysis per model
 - Context window usage reporting
 
+### 🤖 AI Judge (Deep Analysis)
+Use `--judge` to run an LLM-powered audit. It identifies subtle issues:
+- **Tone Consistency**: Detects if the role's personality drifts.
+- **Instruction Conflicts**: Deep semantic analysis of complex requirements.
+- **Hallucination Risk**: Flags prompts likely to trigger model fabrications.
+
+### 🛠️ Auto-Fix (--fix)
+PromptQC can automatically correct deterministic issues:
+- Replaces **Negative Framing** (e.g., "Do not...") with positive equivalents.
+- Removes **Filler Phrases** (e.g., "Please...") to save tokens.
+- Safely writes improvements back to your source file.
+
+### 🏗️ Robust Sandboxing (PQ013)
+Detects variables inside multi-line XML tags (`<context>\n{data}\n</context>`) to ensure prompt injection protection is correctly implemented.
+
 ## CI/CD Integration
 
 ### GitHub Actions
@@ -186,6 +209,28 @@ repos:
 | 0.70-0.85 | Related concepts |
 | < 0.70 | Different topics |
 
+### Custom Rule Definitions
+You can write your own rules in Python and load them via `promptqc.toml`:
+
+```toml
+custom_rules = ["my_rules.company_specific_rule"]
+```
+
+```python
+# my_rules.py
+from promptqc.rules.base import Rule, Issue, Severity, Category
+
+class MyCustomRule(Rule):
+    code = "CUST001"
+    severity = Severity.WARNING
+    category = Category.SECURITY
+    
+    def check(self, parsed, analyzer):
+        if "INTERNAL_KEY" in parsed.text:
+            return [Issue(self.code, "Don't share internal keys!", self.severity, self.category)]
+        return []
+```
+
 ### Token Budget Models
 
 PromptQC knows context windows for: GPT-4o, GPT-4o-mini, GPT-3.5-turbo, Claude 3.5 Sonnet, Claude 3 Opus/Haiku, Gemini 1.5/2.0, Llama 3/3.1, Mistral, Mixtral.
@@ -227,8 +272,9 @@ pytest
 
 ## Roadmap
 
-- [ ] Custom rule definitions (YAML-based)
-- [ ] Auto-fix mode (generate improved prompt)
+- [x] Custom rule definitions (Python-based)
+- [x] Auto-fix mode (--fix)
+- [x] AI Judge audit (deep analysis)
 - [ ] VS Code extension
 - [ ] LangChain/LlamaIndex integration
 - [ ] HTML report generation

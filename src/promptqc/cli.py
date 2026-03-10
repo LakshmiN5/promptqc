@@ -74,6 +74,29 @@ def _format_report(report: Report, show_suggestions: bool = True) -> None:
                 sec_table.add_row(name, f"{toks:,}")
             console.print(sec_table)
 
+    # ── Template variables ──
+    from promptqc.parser import parse_prompt
+    parsed = parse_prompt(report.prompt_text)
+    if parsed.template_variables:
+        var_table = Table(
+            title="[bold]Template Variables[/bold]",
+            box=box.ROUNDED,
+            show_header=True,
+            header_style="bold",
+        )
+        var_table.add_column("Variable", style="cyan")
+        var_table.add_column("Line", justify="right")
+        var_table.add_column("Sandboxed", justify="center")
+
+        for var in parsed.template_variables:
+            sandboxed_icon = (
+                f"[green]✓ <{var.sandbox_tag}>[/green]" if var.is_sandboxed
+                else "[red]✗ UNSAFE[/red]"
+            )
+            var_table.add_row(var.syntax, str(var.line), sandboxed_icon)
+
+        console.print(var_table)
+
     # ── Issues ──
     if not report.issues:
         console.print("\n[bold green]✅ No issues found! Your prompt looks great.[/bold green]\n")
@@ -125,13 +148,19 @@ def _format_report(report: Report, show_suggestions: bool = True) -> None:
 
 
 @click.group()
-@click.version_option(version="0.1.0", prog_name="promptqc")
+@click.version_option(version="0.2.0", prog_name="promptqc")
 def main():
     """
     PromptQC — Quality assessment for LLM system prompts.
 
     Analyzes prompts for contradictions, redundancy, anti-patterns,
-    injection vulnerabilities, and token efficiency.
+    injection vulnerabilities, template variable safety, and token efficiency.
+
+    \b
+    Three analysis modes:
+      --fast     Instant heuristic checks (~10ms, no downloads)
+      (default)  Full analysis with semantic embeddings (~2-3s)
+      --judge    LLM-powered deep analysis (requires API key or Ollama)
     """
     pass
 
@@ -141,32 +170,52 @@ def main():
 @click.option("--model", "-m", default="gpt-4o", help="Model for token counting (default: gpt-4o)")
 @click.option("--budget", "-b", type=int, help="Maximum token budget for the prompt")
 @click.option("--fast", is_flag=True, help="Skip semantic analysis (no model download, instant)")
+@click.option("--judge", "-j", type=str, default=None,
+              help="Use LLM judge for deep analysis (e.g., groq/llama3-8b-8192, ollama/phi3, gpt-4o-mini)")
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON")
 @click.option("--strict", is_flag=True, help="Show only errors and warnings")
 @click.option("--output", "-o", type=click.Path(), help="Save report to file")
-def check(file, model, budget, fast, output_json, strict, output):
+@click.option("--fix", is_flag=True, help="Auto-fix deterministic issues (filler phrases, negative framing)")
+def check(file, model, budget, fast, judge, output_json, strict, output, fix):
     """
     Analyze a prompt file for quality issues.
 
+    \\b
     Examples:
-
         promptqc check system_prompt.txt
-
+        promptqc check prompt.txt --fast
+        promptqc check prompt.txt --fix
+        promptqc check prompt.txt --judge groq/llama3-8b-8192
+        promptqc check prompt.txt --judge ollama/phi3
         promptqc check prompt.txt --model gpt-4o-mini --budget 2000
-
         promptqc check prompt.txt --fast --json
     """
-    prompt_text = Path(file).read_text(encoding="utf-8")
+    file_path = Path(file)
+    prompt_text = file_path.read_text(encoding="utf-8")
 
-    if not fast:
+    # Auto-fix mode: apply deterministic regex fixes before analysis
+    if fix:
+        prompt_text, fix_count = _apply_fixes(prompt_text)
+        if fix_count > 0:
+            file_path.write_text(prompt_text, encoding="utf-8")
+            console.print(f"[green]✓ Applied {fix_count} auto-fix(es) to {file}[/green]\n")
+        else:
+            console.print("[dim]No auto-fixable issues found.[/dim]\n")
+
+    if judge:
+        console.print(f"[dim]Running LLM Judge analysis ({judge})...[/dim]", highlight=False)
+    elif not fast:
         console.print("[dim]Loading semantic analysis model...[/dim]", highlight=False)
 
-    from promptqc import analyze, analyze_fast, PromptAnalyzer
+    from promptqc import PromptAnalyzer
 
-    if fast:
-        report = analyze_fast(prompt_text, token_model=model, token_budget=budget)
-    else:
-        report = analyze(prompt_text, token_model=model, token_budget=budget)
+    analyzer = PromptAnalyzer(
+        fast_mode=fast,
+        token_model=model,
+        token_budget=budget,
+        judge_model=judge,
+    )
+    report = analyzer.analyze(prompt_text)
 
     if output_json:
         result = json.dumps(report.to_dict(), indent=2)
@@ -188,6 +237,39 @@ def check(file, model, budget, fast, output_json, strict, output):
     # Exit code: 1 if errors, 0 otherwise
     if report.errors:
         sys.exit(1)
+
+
+def _apply_fixes(text: str) -> tuple:
+    """
+    Apply deterministic auto-fixes to a prompt.
+
+    Only fixes safe, regex-based patterns where the replacement is unambiguous:
+    - PQ005: Filler phrases (e.g., "in order to" → "To")
+    - PQ003: Negative framing (e.g., "Do not hallucinate" → "Only state facts...")
+
+    Returns:
+        (fixed_text, number_of_fixes_applied)
+    """
+    import re
+    from promptqc.rules.patterns import FILLER_PHRASES, NEGATIVE_FRAMING_PATTERNS
+
+    fix_count = 0
+
+    # Fix filler phrases (PQ005): these are safe, direct substitutions
+    for pattern, replacement, _ in FILLER_PHRASES:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        if matches:
+            fix_count += len(matches)
+            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+
+    # Fix negative framing (PQ003): replace the whole line's negative phrase
+    for pattern, positive_rewrite in NEGATIVE_FRAMING_PATTERNS:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        if matches:
+            fix_count += len(matches)
+            text = re.sub(pattern, positive_rewrite, text, flags=re.IGNORECASE)
+
+    return text, fix_count
 
 
 @main.command()
@@ -268,6 +350,57 @@ def tokens(file, model):
         )
 
     console.print(compare_table)
+
+
+@main.command()
+def init():
+    """
+    Create a promptqc.toml configuration file in the current directory.
+
+    The config file lets you:
+    - Disable specific rules globally
+    - Set default model for token counting
+    - Configure thresholds
+    - Set a default LLM judge model
+    """
+    config_path = Path("promptqc.toml")
+    if config_path.exists():
+        console.print("[yellow]⚠️  promptqc.toml already exists. Skipping.[/yellow]")
+        return
+
+    config_content = '''# PromptQC Configuration
+# https://github.com/yourusername/promptqc
+
+# Rules to disable globally (e.g., ["PQ003", "PQ005"])
+disable_rules = []
+
+# Default model for token counting
+token_model = "gpt-4o"
+
+# Optional: Set a default LLM judge model
+# Uncomment one of the lines below:
+# judge_model = "groq/llama3-8b-8192"    # Free via Groq (needs GROQ_API_KEY)
+# judge_model = "ollama/phi3"             # Free, local via Ollama
+# judge_model = "gpt-4o-mini"             # OpenAI (needs OPENAI_API_KEY)
+
+# Template syntax detection: "auto", "python", "jinja2", "none"
+template_syntax = "auto"
+
+[thresholds]
+# Similarity score above which instructions are flagged as redundant (0.0-1.0)
+redundancy = 0.88
+
+# Similarity range for contradiction detection
+contradiction_min = 0.35
+contradiction_max = 0.85
+
+[severity_overrides]
+# Override severity of specific rules (e.g., make PQ005 a warning instead of info)
+# PQ005 = "warning"
+'''
+    config_path.write_text(config_content, encoding="utf-8")
+    console.print("[green]✓ Created promptqc.toml[/green]")
+    console.print("[dim]Edit this file to customize rules, thresholds, and LLM judge settings.[/dim]")
 
 
 if __name__ == "__main__":

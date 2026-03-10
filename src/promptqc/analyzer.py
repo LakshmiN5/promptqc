@@ -1,11 +1,12 @@
 """Core analysis engine for promptqc."""
 
-from typing import List, Optional
+from typing import List, Optional, Set
 
 from promptqc.models import Issue, Report, QualityScore, Severity
 from promptqc.parser import parse_prompt, ParsedPrompt
 from promptqc.rules.base import BaseRule
-from promptqc.rules import get_default_rules, get_fast_rules
+from promptqc.rules import get_default_rules, get_fast_rules, get_judge_rules
+from promptqc.config import PromptQCConfig, parse_inline_disables, load_config
 
 
 class PromptAnalyzer:
@@ -13,9 +14,17 @@ class PromptAnalyzer:
     Main analyzer that runs quality checks on prompts.
 
     Usage:
+        # Fast mode (instant, heuristic-only)
+        analyzer = PromptAnalyzer(fast_mode=True)
+        report = analyzer.analyze("You are a helpful assistant...")
+
+        # Full mode (includes semantic embedding analysis)
         analyzer = PromptAnalyzer()
         report = analyzer.analyze("You are a helpful assistant...")
-        print(report.quality_score.total)
+
+        # Judge mode (uses LLM for deep analysis)
+        analyzer = PromptAnalyzer(judge_model="groq/llama3-8b-8192")
+        report = analyzer.analyze("You are a helpful assistant...")
     """
 
     def __init__(
@@ -25,6 +34,8 @@ class PromptAnalyzer:
         token_model: str = "gpt-4o",
         token_budget: Optional[int] = None,
         fast_mode: bool = False,
+        judge_model: Optional[str] = None,
+        config: Optional[PromptQCConfig] = None,
     ):
         """
         Initialize the analyzer.
@@ -35,25 +46,51 @@ class PromptAnalyzer:
             token_model: Model name for token counting (e.g., "gpt-4o")
             token_budget: Optional explicit token budget to enforce
             fast_mode: If True, skip embedding-based rules for instant results
+            judge_model: LiteLLM model identifier for LLM judge mode
+                         (e.g., "groq/llama3-8b-8192", "ollama/phi3", "gpt-4o-mini")
+            config: Optional PromptQCConfig (loaded from file if None)
         """
         self._model_name = model_name
         self._embedding_model = None
         self._token_budget = None  # Set by TokenBudgetRule during analysis
         self.token_model = token_model
+        self.judge_model = judge_model
+
+        # Load config
+        self.config = config or load_config()
+
+        # Apply config overrides
+        if self.config.judge_model and judge_model is None:
+            self.judge_model = self.config.judge_model
+
+        # Load custom rules from config (if any)
+        custom = self.config.custom_rules or None
 
         if rules is not None:
             self.rules = rules
+        elif self.judge_model:
+            self.rules = get_judge_rules(
+                model=token_model,
+                budget=token_budget,
+                judge_model=self.judge_model,
+                custom=custom,
+            )
         elif fast_mode:
-            self.rules = get_fast_rules(model=token_model, budget=token_budget)
+            self.rules = get_fast_rules(model=token_model, budget=token_budget, custom=custom)
         else:
-            self.rules = get_default_rules(model=token_model, budget=token_budget)
+            self.rules = get_default_rules(model=token_model, budget=token_budget, custom=custom)
 
     @property
     def embedding_model(self):
-        """Lazy-load the sentence transformer model."""
+        """Lazy-load the sentence transformer model with user-visible progress."""
         if self._embedding_model is None:
             from sentence_transformers import SentenceTransformer
-            self._embedding_model = SentenceTransformer(self._model_name)
+            from rich.console import Console
+            with Console(stderr=True).status(
+                f"[dim]Downloading semantic model ({self._model_name})…[/dim]",
+                spinner="dots",
+            ):
+                self._embedding_model = SentenceTransformer(self._model_name)
         return self._embedding_model
 
     def analyze(self, prompt_text: str) -> Report:
@@ -69,12 +106,29 @@ class PromptAnalyzer:
         # Parse the prompt
         parsed = parse_prompt(prompt_text)
 
+        # Parse inline disable comments
+        inline_disables = parse_inline_disables(prompt_text)
+
+        # Get globally disabled rules from config
+        disabled_rules = self.config.disabled_rule_set
+
         # Run all rules
         all_issues: List[Issue] = []
         for rule in self.rules:
+            # Skip globally disabled rules
+            if rule.rule_id in disabled_rules:
+                continue
+
             try:
                 issues = rule.check(parsed, self)
-                all_issues.extend(issues)
+
+                # Filter out inline-disabled issues
+                for issue in issues:
+                    line_disables = inline_disables.get(issue.line, set())
+                    if "*" in line_disables or issue.rule_id in line_disables:
+                        continue  # Suppressed by inline comment
+                    all_issues.append(issue)
+
             except Exception as e:
                 # Don't crash on individual rule failures
                 all_issues.append(Issue(
@@ -138,6 +192,8 @@ class PromptAnalyzer:
             "efficiency": "efficiency",
             "security": "security",
             "structure": "structure",
+            "semantic": "consistency",
+            "internal": "structure",
         }
 
         # Deduction amounts by severity

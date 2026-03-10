@@ -1,5 +1,6 @@
 """Semantic rules — contradiction and redundancy detection using embeddings."""
 
+import re
 from typing import List, Tuple
 import numpy as np
 
@@ -30,16 +31,60 @@ OPPOSING_TERMS = [
 
 
 def _has_opposing_terms(text1: str, text2: str) -> bool:
-    """Check if two texts contain known opposing term pairs."""
+    """Check if two texts contain genuinely contradictory opposing term pairs.
+
+    To reduce false positives, this function requires that AFTER removing
+    the opposing terms themselves and common stop words, the remaining
+    content words in both instructions have meaningful overlap. This ensures
+    we only flag instructions that modify the SAME concept in opposite ways.
+
+    Example TRUE positive:  "Be concise" vs "Be detailed"
+      → remaining content: {"be"} vs {"be"} → high overlap → flagged
+
+    Example FALSE positive avoided:  "Always sanitize input" vs "Never execute raw SQL"
+      → remaining content: {"sanitize", "input"} vs {"execute", "raw", "sql"}
+      → zero overlap → NOT flagged
+    """
     t1_lower = text1.lower()
     t2_lower = text2.lower()
+
+    # Collect all opposing term words for exclusion from content overlap check
+    all_opposing_words = set()
+    for group_a, group_b in OPPOSING_TERMS:
+        for term in group_a | group_b:
+            all_opposing_words.update(term.split())
+
+    # Stop words to exclude from overlap check
+    _STOP_WORDS = {
+        'the', 'a', 'an', 'is', 'are', 'be', 'to', 'in', 'of', 'and', 'or',
+        'for', 'on', 'at', 'by', 'with', 'your', 'you', 'all', 'it', 'that',
+        'this', 'from', 'as', 'not', 'do', 'should', 'must', 'will', 'can',
+        'may', 'have', 'has', 'been', 'being', 'was', 'were',
+    }
+
     for group_a, group_b in OPPOSING_TERMS:
         a_in_1 = any(term in t1_lower for term in group_a)
         b_in_2 = any(term in t2_lower for term in group_b)
         a_in_2 = any(term in t2_lower for term in group_a)
         b_in_1 = any(term in t1_lower for term in group_b)
         if (a_in_1 and b_in_2) or (a_in_2 and b_in_1):
-            return True
+            # Found opposing terms — now verify the REST of the text overlaps,
+            # meaning both instructions are about the same concept.
+            words1 = set(re.findall(r'\b\w+\b', t1_lower)) - all_opposing_words - _STOP_WORDS
+            words2 = set(re.findall(r'\b\w+\b', t2_lower)) - all_opposing_words - _STOP_WORDS
+
+            if not words1 or not words2:
+                # Very short instructions (e.g., "Be concise" → empty after removal)
+                # — opposing terms alone are enough to flag
+                return True
+
+            overlap = words1 & words2
+            union = words1 | words2
+            jaccard = len(overlap) / len(union) if union else 0
+
+            # Require meaningful content overlap to confirm same-subject opposition
+            if jaccard >= 0.25 or len(overlap) >= 2:
+                return True
     return False
 
 
@@ -80,7 +125,7 @@ class ContradictionRule(BaseRule):
     needs_embeddings = True
 
     # Similarity thresholds
-    MIN_TOPIC_SIMILARITY = 0.35  # Must share some topic
+    MIN_TOPIC_SIMILARITY = 0.50  # Must share meaningful topic overlap
     MAX_TOPIC_SIMILARITY = 0.85  # If too similar, it's redundancy not contradiction
 
     def check(self, parsed: ParsedPrompt, analyzer) -> List[Issue]:

@@ -2,7 +2,7 @@
 
 import re
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Set
 
 
 @dataclass
@@ -54,11 +54,22 @@ class PromptSection:
 
 
 @dataclass
+class TemplateVariable:
+    """A template variable found in the prompt."""
+    name: str              # Variable name (e.g., "user_input")
+    syntax: str            # Full match (e.g., "{user_input}", "{{context}}")
+    line: int              # 1-indexed line number
+    is_sandboxed: bool     # Whether it's inside XML/delimiter tags
+    sandbox_tag: Optional[str] = None  # The tag wrapping it, if any
+
+
+@dataclass
 class ParsedPrompt:
     """Fully parsed prompt with sections and metadata."""
     raw_text: str
     lines: List[PromptLine]
     sections: List[PromptSection]
+    template_variables: List[TemplateVariable] = field(default_factory=list)
 
     @property
     def all_instructions(self) -> List[Tuple[int, str]]:
@@ -67,6 +78,16 @@ class ParsedPrompt:
         for section in self.sections:
             result.extend(section.instructions)
         return result
+
+    @property
+    def variable_names(self) -> Set[str]:
+        """Get all unique template variable names."""
+        return {v.name for v in self.template_variables}
+
+    @property
+    def unsandboxed_variables(self) -> List[TemplateVariable]:
+        """Get template variables that are not wrapped in safe delimiters."""
+        return [v for v in self.template_variables if not v.is_sandboxed]
 
     @property
     def total_lines(self) -> int:
@@ -93,6 +114,17 @@ _MARKDOWN_HEADER_RE = re.compile(r'^(#{1,6})\s+(.+)')
 _SEPARATOR_RE = re.compile(r'^[-=]{3,}\s*$')
 _XML_TAG_RE = re.compile(r'^<(\w+)>')
 _XML_CLOSE_TAG_RE = re.compile(r'^</(\w+)>')
+
+# Template variable patterns (order matters: Jinja2 double-braces before single)
+_TEMPLATE_PATTERNS = [
+    re.compile(r'\{\{\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*\}\}'),   # Jinja2: {{ var }}
+    re.compile(r'(?<!\{)\{\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*\}(?!\})'),  # Python f-string / .format(): {var}
+    re.compile(r'\$\{\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*\}'),      # Shell-style: ${var}
+]
+
+# Regex for finding XML open and close tags
+_XML_OPEN_TAG_INLINE_RE = re.compile(r'<([a-zA-Z_][a-zA-Z0-9_-]*)>')
+_XML_CLOSE_TAG_INLINE_RE = re.compile(r'</([a-zA-Z_][a-zA-Z0-9_-]*)>')
 
 
 def parse_prompt(text: str) -> ParsedPrompt:
@@ -184,8 +216,121 @@ def parse_prompt(text: str) -> ParsedPrompt:
             level=current_section_level,
         ))
 
+    # Extract template variables
+    template_variables = _extract_template_variables(text)
+
     return ParsedPrompt(
         raw_text=text,
         lines=parsed_lines,
         sections=sections,
+        template_variables=template_variables,
     )
+
+
+def _build_sandboxed_regions(text: str) -> List[Tuple[int, int, str]]:
+    """
+    Build a list of XML-tag sandboxed regions across the entire prompt.
+
+    Uses a stack-based state machine to track opening and closing XML tags
+    across multiple lines, correctly handling:
+    - Multi-line: <context>\n{data}\n</context>
+    - Single-line: <query>{input}</query>
+    - With surrounding text: <query>User asked: {input}</query>
+
+    Returns:
+        List of (start_line, end_line, tag_name) tuples representing
+        regions where template variables are considered "sandboxed."
+    """
+    lines = text.split("\n")
+    regions: List[Tuple[int, int, str]] = []
+
+    # Stack of (tag_name, opening_line_number)
+    tag_stack: List[Tuple[str, int]] = []
+
+    for i, line in enumerate(lines):
+        line_num = i + 1
+
+        # Process all tags on this line in order of their position.
+        # We collect both opens and closes, sort by position, and process
+        # sequentially to handle multiple tags on one line correctly.
+        events: List[Tuple[int, str, str]] = []  # (position, 'open'|'close', tag_name)
+
+        for match in _XML_OPEN_TAG_INLINE_RE.finditer(line):
+            events.append((match.start(), "open", match.group(1)))
+        for match in _XML_CLOSE_TAG_INLINE_RE.finditer(line):
+            events.append((match.start(), "close", match.group(1)))
+
+        # Sort by position so we process left-to-right
+        events.sort(key=lambda e: e[0])
+
+        for _, event_type, tag_name in events:
+            if event_type == "open":
+                tag_stack.append((tag_name, line_num))
+            elif event_type == "close":
+                # Find matching opening tag (search from top of stack)
+                for k in range(len(tag_stack) - 1, -1, -1):
+                    if tag_stack[k][0] == tag_name:
+                        open_line = tag_stack[k][1]
+                        regions.append((open_line, line_num, tag_name))
+                        tag_stack.pop(k)
+                        break
+
+    return regions
+
+
+def _extract_template_variables(text: str) -> List[TemplateVariable]:
+    """
+    Extract template variables from prompt text.
+
+    Detects:
+    - Python f-string / .format() style: {variable_name}
+    - Jinja2 style: {{ variable_name }}
+    - Shell style: ${variable_name}
+
+    Also checks if each variable is "sandboxed" inside XML-like tags
+    using a state-machine that tracks tags across multiple lines:
+    - <context>\n{user_input}\n</context>  → sandboxed  (multi-line)
+    - <query>{user_input}</query>           → sandboxed  (single-line)
+    - <query>Prompt: {user_input}</query>   → sandboxed  (with text)
+    - Summarize this: {user_input}          → NOT sandboxed (injection risk)
+    """
+    variables: List[TemplateVariable] = []
+    lines = text.split("\n")
+
+    # Step 1: Build sandboxed regions using the state-machine parser
+    sandboxed_regions = _build_sandboxed_regions(text)
+
+    # Step 2: Extract all template variables
+    seen_on_line: Dict[int, set] = {}  # Avoid duplicate reports on same line
+    for i, line in enumerate(lines):
+        line_num = i + 1
+        seen_on_line[line_num] = set()
+
+        for pattern in _TEMPLATE_PATTERNS:
+            for match in pattern.finditer(line):
+                var_name = match.group(1)
+                full_match = match.group(0)
+
+                # Skip if already seen on this line (Jinja2 pattern might also match single-brace)
+                if var_name in seen_on_line[line_num]:
+                    continue
+                seen_on_line[line_num].add(var_name)
+
+                # Step 3: Check if this variable falls within any sandboxed region
+                is_sandboxed = False
+                sandbox_tag = None
+                for region_start, region_end, region_tag in sandboxed_regions:
+                    if region_start <= line_num <= region_end:
+                        is_sandboxed = True
+                        sandbox_tag = region_tag
+                        break
+
+                variables.append(TemplateVariable(
+                    name=var_name,
+                    syntax=full_match,
+                    line=line_num,
+                    is_sandboxed=is_sandboxed,
+                    sandbox_tag=sandbox_tag,
+                ))
+
+    return variables
