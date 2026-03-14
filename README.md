@@ -8,6 +8,15 @@
 
 > **Think of it as ESLint for your system prompts** — catch contradictions, anti-patterns, injection vulnerabilities, and token waste before they reach production.
 
+## Features
+
+✅ **Security Scanning** - Detects injection vulnerabilities, unsafe code execution
+✅ **Contradiction Detection** - Finds conflicting instructions that confuse LLMs
+✅ **Token Optimization** - Identifies wasted tokens and verbose phrasing
+✅ **Multiple Modes** - Fast (~10ms), Full (~2s), or LLM Judge (~5s) analysis
+✅ **CI/CD Ready** - GitHub Actions, pre-commit hooks, JSON output
+✅ **Auto-Fix** - Automatically correct common issues
+
 ## Why PromptQC?
 
 System prompts are the **source code of AI applications**. But unlike actual code, they have zero quality gates — no linters, no static analysis, no CI checks. Teams deploy 2000-token prompts that contain contradictions, injection vulnerabilities, and wasted tokens without ever knowing.
@@ -260,6 +269,16 @@ print(report.token_budget.total_tokens)
 import json
 print(json.dumps(report.to_dict(), indent=2))
 ```
+
+## Known Limitations
+
+**v0.2.0 is beta quality.** While it catches critical issues (security, contradictions) with high accuracy, some areas need improvement:
+
+- **Redundancy Detection**: Without LLM judge mode, verbose synonym lists may not be detected. Use `--judge` flag for better results.
+- **Test Coverage**: Validated on a focused test suite. Real-world accuracy may vary.
+- **LLM Judge Dependency**: Deep analysis requires API key (Groq, OpenAI) or local Ollama setup.
+
+We're actively improving these areas. Feedback and contributions welcome!
 
 ## Development
 
