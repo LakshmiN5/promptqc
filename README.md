@@ -264,7 +264,7 @@ print(json.dumps(report.to_dict(), indent=2))
 ## Development
 
 ```bash
-git clone https://github.com/yourusername/promptqc.git
+git clone https://github.com/LakshmiN5/promptqc.git
 cd promptqc
 pip install -e ".[dev]"
 pytest

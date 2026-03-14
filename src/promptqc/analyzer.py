@@ -1,6 +1,13 @@
 """Core analysis engine for promptqc."""
 
+import os
+import warnings
 from typing import List, Optional, Set
+
+# Suppress sentence-transformers warnings
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+warnings.filterwarnings("ignore", message=".*position_ids.*")
+warnings.filterwarnings("ignore", category=FutureWarning, module="transformers")
 
 from promptqc.models import Issue, Report, QualityScore, Severity
 from promptqc.parser import parse_prompt, ParsedPrompt
@@ -23,7 +30,7 @@ class PromptAnalyzer:
         report = analyzer.analyze("You are a helpful assistant...")
 
         # Judge mode (uses LLM for deep analysis)
-        analyzer = PromptAnalyzer(judge_model="groq/llama3-8b-8192")
+        analyzer = PromptAnalyzer(judge_model="groq/qwen/qwen3-32b")
         report = analyzer.analyze("You are a helpful assistant...")
     """
 
@@ -47,7 +54,7 @@ class PromptAnalyzer:
             token_budget: Optional explicit token budget to enforce
             fast_mode: If True, skip embedding-based rules for instant results
             judge_model: LiteLLM model identifier for LLM judge mode
-                         (e.g., "groq/llama3-8b-8192", "ollama/phi3", "gpt-4o-mini")
+                         (e.g., "groq/qwen/qwen3-32b", "ollama/phi3", "gpt-4o-mini")
             config: Optional PromptQCConfig (loaded from file if None)
         """
         self._model_name = model_name
@@ -197,10 +204,11 @@ class PromptAnalyzer:
         }
 
         # Deduction amounts by severity
+        # Increased to be more strict on bad prompts
         deductions = {
-            Severity.ERROR: 15,
-            Severity.WARNING: 8,
-            Severity.SUGGESTION: 3,
+            Severity.ERROR: 20,      # Was 15 - critical issues should heavily impact score
+            Severity.WARNING: 12,    # Was 8 - warnings are serious problems
+            Severity.SUGGESTION: 5,  # Was 3 - even suggestions add up
             Severity.INFO: 0,
         }
 

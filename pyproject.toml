@@ -60,10 +60,10 @@ dev = [
 promptqc = "promptqc.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/yourusername/promptqc"
-Documentation = "https://github.com/yourusername/promptqc#readme"
-Repository = "https://github.com/yourusername/promptqc"
-Issues = "https://github.com/yourusername/promptqc/issues"
+Homepage = "https://github.com/LakshmiN5/promptqc"
+Documentation = "https://github.com/LakshmiN5/promptqc#readme"
+Repository = "https://github.com/LakshmiN5/promptqc"
+Issues = "https://github.com/LakshmiN5/promptqc/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

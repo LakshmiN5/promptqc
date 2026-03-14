@@ -93,10 +93,25 @@ class CompletenessRule(BaseRule):
                 category=self.category,
             ))
 
-        # 4. Check if prompt is too short for its complexity
+        # 4. Check for extremely vague/minimal prompts
         section_count = len(parsed.sections)
         instruction_count = len(parsed.all_instructions)
-
+        word_count = len(full_text.split())
+        
+        # Detect prompts that are too vague to be useful
+        # A good prompt should have at least 50 words OR 5+ specific instructions
+        if word_count < 50 and instruction_count < 5:
+            issues.append(Issue(
+                rule_id="PQ011",
+                severity=Severity.WARNING,
+                message=f"Extremely vague prompt ({word_count} words, {instruction_count} instructions) — lacks sufficient detail for consistent behavior",
+                line=1,
+                line_content=parsed.get_line_text(1),
+                suggestion="Add specific instructions about: role, task, constraints, output format, and examples",
+                category=self.category,
+            ))
+        
+        # 5. Check if prompt is too short for its complexity
         if instruction_count > 10 and section_count <= 1:
             issues.append(Issue(
                 rule_id="PQ009",
@@ -108,7 +123,7 @@ class CompletenessRule(BaseRule):
                 category=self.category,
             ))
 
-        # 5. Check for examples in complex prompts
+        # 6. Check for examples in complex prompts
         has_examples = bool(re.search(
             r"\b(example|e\.g\.|for\s+instance|sample|such\s+as|here\s+is)\b",
             full_lower,

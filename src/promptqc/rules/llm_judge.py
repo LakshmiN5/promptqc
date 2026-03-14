@@ -19,6 +19,13 @@ Usage:
     promptqc check prompt.txt --judge gpt-4o-mini
 """
 
+import os
+import logging
+
+# Suppress LiteLLM verbose logging
+os.environ["LITELLM_LOG"] = "ERROR"
+logging.getLogger("LiteLLM").setLevel(logging.ERROR)
+
 import json
 from typing import List, Optional
 
@@ -33,15 +40,22 @@ Your job is to analyze a system prompt and find REAL issues. Be precise and avoi
 
 Analyze the prompt for:
 1. **Contradictions**: Instructions that genuinely conflict (not just different aspects of behavior)
+   - **Cross-instruction**: Conflicting instructions on different lines
+   - **Intra-sentence**: Contradictions within a single sentence (e.g., "Be brief, but include all details")
 2. **Injection Vulnerabilities**: Template variables containing user data without XML sandboxing
 3. **Ambiguity**: Instructions so vague the LLM will interpret them inconsistently
 4. **Missing Critical Elements**: Important missing pieces for the prompt's stated purpose
+5. **Token Inefficiency**: Verbose phrasing, excessive lists of synonyms, or wordy instructions that add no new semantic value but waste tokens
 
 Rules:
-- Only report GENUINE issues, not stylistic preferences
-- Each issue must have a specific line reference and actionable fix
-- Do NOT flag things that are clearly intentional design choices
-- Be conservative: when in doubt, don't report it
+- STRICTLY ONLY report GENUINE issues, not stylistic preferences or opinions on ambiguity.
+- DO NOT flag standard instruction language (e.g. "extract main points", "explain why", "summarize") as ambiguous. LLMs understand these perfectly well.
+- DO NOT flag correcting grammar/spelling/formatting as a contradiction to "do not add new information". Fixing errors is not adding information.
+- DO NOT flag instructions about conciseness vs detail if they apply to different parts of the output.
+- Each issue must have a specific line reference and actionable fix.
+- Do NOT flag things that are clearly intentional design choices.
+- Be extremely conservative: when in doubt, do NOT report it. Only flag absolute, undeniable errors.
+- Pay special attention to intra-sentence contradictions joined by "but", "however", "yet", "although".
 
 Respond ONLY with valid JSON matching this exact schema (no markdown, no explanation):
 {
@@ -62,6 +76,7 @@ Rule ID assignments:
 - PQ022: Ambiguous instruction (will cause inconsistent LLM behavior)
 - PQ023: Missing critical element (important gap for the prompt's purpose)
 - PQ024: Other significant issue
+- PQ025: Token waste/Verbosity (excessive synonyms, rambling instructions, or filler phrases)
 
 Severity guide:
 - error: Will definitely cause problems in production
@@ -145,10 +160,10 @@ class LLMJudgeRule(BaseRule):
     description = "Deep semantic analysis using LLM-as-a-Judge"
     needs_embeddings = False
 
-    def __init__(self, model: str = "groq/llama3-8b-8192"):
+    def __init__(self, model: str = "groq/qwen/qwen3-32b"):
         """
         Args:
-            model: LiteLLM model identifier (e.g., "groq/llama3-8b-8192",
+            model: LiteLLM model identifier (e.g., "groq/qwen/qwen3-32b",
                    "ollama/phi3", "gpt-4o-mini")
         """
         self.model = model
@@ -226,7 +241,7 @@ class LLMJudgeRule(BaseRule):
             if "api_key" in error_msg.lower() or "auth" in error_msg.lower():
                 hint = (
                     f"Set the API key for {self.model}. Examples:\n"
-                    f"  export GROQ_API_KEY='gsk_...'      (free: groq/llama3-8b-8192)\n"
+                    f"  export GROQ_API_KEY='gsk_...'      (free: groq/qwen/qwen3-32b)\n"
                     f"  export OPENAI_API_KEY='sk-...'      (gpt-4o-mini)\n"
                     f"  ollama pull phi3                     (local: ollama/phi3)"
                 )

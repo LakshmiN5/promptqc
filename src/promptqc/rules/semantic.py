@@ -235,3 +235,5 @@ class RedundancyRule(BaseRule):
                 flagged.add((i, j))
 
         return issues
+
+
