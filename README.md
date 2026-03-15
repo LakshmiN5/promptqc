@@ -1,12 +1,20 @@
 # PromptQC 🔍
 
-**Quality assessment and improvement suggestions for LLM system prompts.**
+> **ESLint for your system prompts** — catch contradictions, anti-patterns, injection vulnerabilities, and token waste before they reach production.
 
 [![PyPI version](https://badge.fury.io/py/promptqc.svg)](https://badge.fury.io/py/promptqc)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub issues](https://img.shields.io/github/issues/LakshmiN5/promptqc)](https://github.com/LakshmiN5/promptqc/issues)
+[![GitHub discussions](https://img.shields.io/github/discussions/LakshmiN5/promptqc)](https://github.com/LakshmiN5/promptqc/discussions)
 
-> **Think of it as ESLint for your system prompts** — catch contradictions, anti-patterns, injection vulnerabilities, and token waste before they reach production.
+## Installation
+
+```bash
+pip install promptqc
+```
+
+**Quality assessment and improvement suggestions for LLM system prompts.**
 
 ## Features
 
@@ -22,6 +30,7 @@
 System prompts are the **source code of AI applications**. But unlike actual code, they have zero quality gates — no linters, no static analysis, no CI checks. Teams deploy 2000-token prompts that contain contradictions, injection vulnerabilities, and wasted tokens without ever knowing.
 
 **PromptQC** catches these issues in milliseconds:
+
 
 ```
 $ promptqc check system_prompt.txt
@@ -58,12 +67,6 @@ $ promptqc check system_prompt.txt
        Fix: Rewrite using "Always" instead
 
   ⛔ Fix errors before deploying this prompt.
-```
-
-## Installation
-
-```bash
-pip install promptqc
 ```
 
 ## Quick Start
@@ -270,15 +273,22 @@ import json
 print(json.dumps(report.to_dict(), indent=2))
 ```
 
-## Known Limitations
+## What's Coming
 
-**v0.2.0 is beta quality.** While it catches critical issues (security, contradictions) with high accuracy, some areas need improvement:
+**v0.2.0 is production-ready for core features** (security scanning, contradiction detection, token optimization). We're actively expanding capabilities:
 
-- **Redundancy Detection**: Without LLM judge mode, verbose synonym lists may not be detected. Use `--judge` flag for better results.
-- **Test Coverage**: Validated on a focused test suite. Real-world accuracy may vary.
-- **LLM Judge Dependency**: Deep analysis requires API key (Groq, OpenAI) or local Ollama setup.
+### Planned Enhancements
+- **Enhanced Redundancy Detection**: Improved semantic analysis without requiring LLM judge mode
+- **Expanded Test Coverage**: Broader validation across diverse prompt patterns and use cases
+- **Offline LLM Judge**: Built-in local models for deep analysis without API dependencies
+- **VS Code Extension**: Real-time linting as you write prompts
+- **Prompt History Tracking**: Version control and regression detection for prompt changes
 
-We're actively improving these areas. Feedback and contributions welcome!
+**Current Limitations:**
+- Deep semantic analysis requires `--judge` mode with API key or local Ollama
+- Redundancy detection works best with LLM judge enabled
+
+💬 **Have feedback or feature requests?** [Start a discussion](https://github.com/LakshmiN5/promptqc/discussions) or [open an issue](https://github.com/LakshmiN5/promptqc/issues)!
 
 ## Development
 
@@ -291,13 +301,24 @@ pytest
 
 ## Roadmap
 
-- [x] Custom rule definitions (Python-based)
-- [x] Auto-fix mode (--fix)
-- [x] AI Judge audit (deep analysis)
-- [ ] VS Code extension
-- [ ] LangChain/LlamaIndex integration
-- [ ] HTML report generation
-- [ ] Prompt history tracking
+### ✅ Shipped (v0.2.0)
+- Custom rule definitions (Python-based)
+- Auto-fix mode (`--fix`)
+- AI Judge audit (deep analysis with `--judge`)
+- Token budget analysis
+- CI/CD integration (GitHub Actions, pre-commit)
+- JSON output for automation
+
+### 🚧 In Progress
+- VS Code extension
+- Enhanced offline redundancy detection
+
+### 📋 Planned
+- LangChain/LlamaIndex integration
+- HTML report generation
+- Prompt history tracking and version control
+- Built-in local LLM for judge mode
+- Prompt template library
 
 ## License
 

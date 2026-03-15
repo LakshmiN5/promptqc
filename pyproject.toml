@@ -46,14 +46,16 @@ semantic = [
     "sentence-transformers>=2.2.0",
 ]
 all = [
-    "promptqc[llm,semantic]",
+    "litellm>=1.30.0",
+    "sentence-transformers>=2.2.0",
 ]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "black>=23.0.0",
     "ruff>=0.1.0",
-    "promptqc[all]",
+    "litellm>=1.30.0",
+    "sentence-transformers>=2.2.0",
 ]
 
 [project.scripts]
