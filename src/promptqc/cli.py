@@ -171,7 +171,7 @@ def main():
 @click.option("--budget", "-b", type=int, help="Maximum token budget for the prompt")
 @click.option("--fast", is_flag=True, help="Skip semantic analysis (no model download, instant)")
 @click.option("--judge", "-j", type=str, default=None,
-              help="Use LLM judge for deep analysis (e.g., groq/llama3-8b-8192, ollama/phi3, gpt-4o-mini)")
+              help="Use LLM judge for deep analysis (e.g., groq/llama3-8b-8192, ollama/phi3, gpt-4o-mini, minimax/MiniMax-M2.5)")
 @click.option("--json", "output_json", is_flag=True, help="Output as JSON")
 @click.option("--strict", is_flag=True, help="Show only errors and warnings")
 @click.option("--output", "-o", type=click.Path(), help="Save report to file")
@@ -187,6 +187,7 @@ def check(file, model, budget, fast, judge, output_json, strict, output, fix):
         promptqc check prompt.txt --fix
         promptqc check prompt.txt --judge groq/llama3-8b-8192
         promptqc check prompt.txt --judge ollama/phi3
+        promptqc check prompt.txt --judge minimax/MiniMax-M2.5
         promptqc check prompt.txt --model gpt-4o-mini --budget 2000
         promptqc check prompt.txt --fast --json
     """
@@ -382,6 +383,7 @@ token_model = "gpt-4o"
 # judge_model = "groq/llama3-8b-8192"    # Free via Groq (needs GROQ_API_KEY)
 # judge_model = "ollama/phi3"             # Free, local via Ollama
 # judge_model = "gpt-4o-mini"             # OpenAI (needs OPENAI_API_KEY)
+# judge_model = "minimax/MiniMax-M2.5"   # MiniMax 204K context (needs MINIMAX_API_KEY)
 
 # Template syntax detection: "auto", "python", "jinja2", "none"
 template_syntax = "auto"

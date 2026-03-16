@@ -26,6 +26,7 @@ MODEL_CONTEXT_WINDOWS: Dict[str, int] = {
     "llama-3.1-70b": 128_000,
     "mistral-7b": 32_768,
     "mixtral-8x7b": 32_768,
+    "MiniMax-M2.5": 204_000,
 }
 
 # Model name to tiktoken encoding mapping
