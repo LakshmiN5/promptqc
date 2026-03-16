@@ -19,7 +19,7 @@ Three analysis modes:
     analyze_smart() — LLM-powered deep analysis (requires API key or Ollama)
 """
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 from promptqc.analyzer import PromptAnalyzer
 from promptqc.models import Issue, Report, Severity, TokenBudget, QualityScore

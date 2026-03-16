@@ -5,6 +5,16 @@ All notable changes to PromptQC will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-03-16
+
+### Added
+- **MiniMax Provider Support**: Added MiniMax as a first-class LLM judge provider
+  - 204K context window for analyzing large system prompts
+  - OpenAI-compatible API integration via LiteLLM
+  - Auto-configuration for `minimax/` prefix
+  - Usage: `promptqc check prompt.txt --judge minimax/MiniMax-M2.5`
+  - Requires `MINIMAX_API_KEY` environment variable
+
 ## [0.2.0] - 2026-03-14
 
 ### Added
