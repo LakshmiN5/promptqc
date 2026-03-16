@@ -104,9 +104,10 @@ promptqc check system_prompt.txt --fast
 promptqc check system_prompt.txt --fix
 
 # AI Judge deep analysis — uses an LLM to find subtle logic issues
-# Requires API key (GROQ_API_KEY, OPENAI_API_KEY) or local Ollama
+# Requires API key (GROQ_API_KEY, OPENAI_API_KEY, MINIMAX_API_KEY) or local Ollama
 promptqc check prompt.txt --judge groq/llama3-8b-8192
 promptqc check prompt.txt --judge ollama/phi3
+promptqc check prompt.txt --judge minimax/MiniMax-M2.5
 
 # Token budget analysis
 promptqc tokens system_prompt.txt --model gpt-4o-mini
@@ -245,7 +246,7 @@ class MyCustomRule(Rule):
 
 ### Token Budget Models
 
-PromptQC knows context windows for: GPT-4o, GPT-4o-mini, GPT-3.5-turbo, Claude 3.5 Sonnet, Claude 3 Opus/Haiku, Gemini 1.5/2.0, Llama 3/3.1, Mistral, Mixtral.
+PromptQC knows context windows for: GPT-4o, GPT-4o-mini, GPT-3.5-turbo, Claude 3.5 Sonnet, Claude 3 Opus/Haiku, Gemini 1.5/2.0, Llama 3/3.1, Mistral, Mixtral, MiniMax-M2.5.
 
 ## Advanced Usage
 

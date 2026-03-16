@@ -127,7 +127,7 @@ def analyze_smart(
     """
     Analyze a prompt using an LLM judge for deep semantic analysis.
 
-    Uses LiteLLM to call any provider (Groq, Ollama, OpenAI, Anthropic).
+    Uses LiteLLM to call any provider (Groq, Ollama, OpenAI, Anthropic, MiniMax).
     Replaces embedding-based contradiction/redundancy detection with
     actual LLM evaluation for higher accuracy and fewer false positives.
 
@@ -139,6 +139,7 @@ def analyze_smart(
             - "groq/llama3-8b-8192"  (free via Groq, needs GROQ_API_KEY)
             - "ollama/phi3"          (free, local, needs Ollama running)
             - "gpt-4o-mini"          (premium, needs OPENAI_API_KEY)
+            - "minimax/MiniMax-M2.5" (204K context, needs MINIMAX_API_KEY)
         token_model: Model name for token counting
         token_budget: Optional explicit token budget
 

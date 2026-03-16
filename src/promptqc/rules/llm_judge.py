@@ -1,6 +1,6 @@
 """LLM-as-a-Judge rule — deep semantic analysis using LiteLLM.
 
-Uses any LLM provider (Groq, Ollama, OpenAI, Anthropic, etc.) via LiteLLM
+Uses any LLM provider (Groq, Ollama, OpenAI, Anthropic, MiniMax, etc.) via LiteLLM
 to perform deep semantic analysis that regex and embeddings can't handle:
 - Contextual contradiction detection
 - Variable safety assessment
@@ -17,6 +17,10 @@ Usage:
     # Premium options:
     export OPENAI_API_KEY="sk-..."
     promptqc check prompt.txt --judge gpt-4o-mini
+
+    # MiniMax (204K context, OpenAI-compatible):
+    export MINIMAX_API_KEY="..."
+    promptqc check prompt.txt --judge minimax/MiniMax-M2.5
 """
 
 import os
@@ -27,11 +31,41 @@ os.environ["LITELLM_LOG"] = "ERROR"
 logging.getLogger("LiteLLM").setLevel(logging.ERROR)
 
 import json
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from promptqc.rules.base import BaseRule
 from promptqc.models import Issue, Severity
 from promptqc.parser import ParsedPrompt
+
+
+# Provider configurations for OpenAI-compatible APIs that need a custom base URL.
+# Maps provider prefix to (api_base, api_key_env_var).
+_CUSTOM_PROVIDERS: Dict[str, tuple] = {
+    "minimax": ("https://api.minimax.io/v1", "MINIMAX_API_KEY"),
+}
+
+
+def _resolve_provider_kwargs(model: str) -> dict:
+    """Return extra kwargs for litellm.completion() based on the model prefix.
+
+    For providers registered in ``_CUSTOM_PROVIDERS`` (e.g. ``minimax/…``),
+    this rewrites the model to the ``openai/…`` prefix expected by LiteLLM and
+    injects the correct ``api_base`` and ``api_key``.  For all other models the
+    dict is empty, so the caller can simply unpack it with ``**``.
+    """
+    prefix = model.split("/", 1)[0].lower() if "/" in model else ""
+    if prefix not in _CUSTOM_PROVIDERS:
+        return {}
+
+    api_base, api_key_env = _CUSTOM_PROVIDERS[prefix]
+    model_name = model.split("/", 1)[1]
+    api_key = os.environ.get(api_key_env, "")
+
+    return {
+        "model": f"openai/{model_name}",
+        "api_base": api_base,
+        "api_key": api_key,
+    }
 
 
 JUDGE_SYSTEM_PROMPT = """You are PromptQC Judge — an expert prompt engineering analyzer.
@@ -151,6 +185,7 @@ class LLMJudgeRule(BaseRule):
     - Ollama: ollama/phi3, ollama/llama3 (local, private)
     - OpenAI: gpt-4o-mini, gpt-4o (premium)
     - Anthropic: claude-3-haiku-20240307 (premium)
+    - MiniMax: minimax/MiniMax-M2.5 (204K context, needs MINIMAX_API_KEY)
     - And 100+ more via LiteLLM
     """
 
@@ -164,7 +199,8 @@ class LLMJudgeRule(BaseRule):
         """
         Args:
             model: LiteLLM model identifier (e.g., "groq/qwen/qwen3-32b",
-                   "ollama/phi3", "gpt-4o-mini")
+                   "ollama/phi3", "gpt-4o-mini",
+                   "minimax/MiniMax-M2.5")
         """
         self.model = model
 
@@ -197,6 +233,10 @@ class LLMJudgeRule(BaseRule):
                 "temperature": 0.1,  # Low temperature for consistent analysis
                 "max_tokens": 2000,
             }
+
+            # Apply provider-specific overrides (e.g. custom api_base for MiniMax)
+            provider_kwargs = _resolve_provider_kwargs(self.model)
+            base_kwargs.update(provider_kwargs)
 
             # Try with structured JSON output first (supported by OpenAI, Groq, etc.)
             # Fall back gracefully for providers that don't support it.
@@ -243,6 +283,7 @@ class LLMJudgeRule(BaseRule):
                     f"Set the API key for {self.model}. Examples:\n"
                     f"  export GROQ_API_KEY='gsk_...'      (free: groq/qwen/qwen3-32b)\n"
                     f"  export OPENAI_API_KEY='sk-...'      (gpt-4o-mini)\n"
+                    f"  export MINIMAX_API_KEY='...'         (minimax/MiniMax-M2.5)\n"
                     f"  ollama pull phi3                     (local: ollama/phi3)"
                 )
             elif "connection" in error_msg.lower() or "refused" in error_msg.lower():
